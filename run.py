@@ -11,18 +11,24 @@ from loguru import logger
 from websockets_proxy import Proxy, proxy_connect
 from fake_useragent import UserAgent
 
-# Tambahkan sink untuk mencatat kesalahan ke error_logs.txt
+# Tambahkan sink untuk mencatat kesalahan ke error_logs.txt dan aktivitas ke activity_logs.txt
 logger.add("error_logs.txt", level="ERROR", rotation="1 MB", retention="10 days", compression="zip")
+logger.add("activity_logs.txt", level="INFO", rotation="1 MB", retention="10 days", compression="zip")
 
-user_agent = UserAgent(os='windows', platforms='pc', browsers=['chrome', 'edge'])
+# Inisialisasi User-Agent dengan berbagai OS dan browser
+user_agent = UserAgent(os=['windows', 'macos', 'linux'], browsers=['chrome', 'firefox', 'edge'])
 random_user_agent = user_agent.random
 
+# Tambahkan set untuk menyimpan proxies aktif dan lock untuk sinkronisasi
+active_proxies = set()
+proxies_lock = asyncio.Lock()
+
 async def connect_to_wss(socks5_proxy, user_id):
-    device_id = str(uuid.uuid3(uuid.NAMESPACE_DNS, socks5_proxy))
-    logger.info(f"Connecting with Device ID: {device_id}")
+    device_id = str(uuid.uuid4())  # Menggunakan UUID4 untuk device_id yang unik setiap koneksi
+    logger.info(f"Connecting with Device ID: {device_id} menggunakan proxy {socks5_proxy}")
     while True:
         try:
-            await asyncio.sleep(random.randint(1, 10) / 10)
+            await asyncio.sleep(random.uniform(0.1, 1))  # Penundaan acak antara 0.1 hingga 1 detik
             custom_headers = {
                 "User-Agent": random_user_agent,
                 "Origin": "http://tauri.localhost",
@@ -85,12 +91,47 @@ async def connect_to_wss(socks5_proxy, user_id):
                         await websocket.send(json.dumps(pong_response))
         except Exception as e:
             logger.error(f"Error dengan proxy {socks5_proxy}: {e}")
+            # Hapus proxy dari file proxy_list.txt
+            proxy_to_remove = socks5_proxy
+            try:
+                async with proxies_lock:
+                    if proxy_to_remove in active_proxies:
+                        active_proxies.remove(proxy_to_remove)
+                        logger.info(f"Proxy {proxy_to_remove} dihapus dari daftar aktif.")
+                    # Baca semua proxy dari file
+                    with open('proxy_list.txt', 'r') as file:
+                        lines = file.readlines()
+                    # Filter proxy yang akan dihapus
+                    updated_lines = [line for line in lines if line.strip() != proxy_to_remove]
+                    # Tulis kembali proxy yang tersisa ke file
+                    with open('proxy_list.txt', 'w') as file:
+                        file.writelines(updated_lines)
+                logger.info(f"Proxy '{proxy_to_remove}' telah dihapus dari file.")
+            except Exception as file_error:
+                logger.error(f"Gagal menghapus proxy {proxy_to_remove} dari file: {file_error}")
+            break  # Keluar dari loop untuk menghentikan penggunaan proxy ini
 
 async def main():
+    # Minta user_id dari pengguna
     _user_id = input('Silakan Masukkan user ID Anda: ')
-    with open('proxy_list.txt', 'r') as file:
-        local_proxies = file.read().splitlines()
-    tasks = [asyncio.ensure_future(connect_to_wss(i, _user_id)) for i in local_proxies]
+    # Baca proxy dari file proxy_list.txt
+    try:
+        with open('proxy_list.txt', 'r') as file:
+            local_proxies = file.read().splitlines()
+    except FileNotFoundError:
+        logger.error("File 'proxy_list.txt' tidak ditemukan.")
+        return
+
+    # Inisialisasi active_proxies dengan proxies dari file
+    async with proxies_lock:
+        active_proxies.update(local_proxies)
+
+    tasks = []
+    async with proxies_lock:
+        for proxy in list(active_proxies):
+            task = asyncio.create_task(connect_to_wss(proxy, _user_id))
+            tasks.append(task)
+
     await asyncio.gather(*tasks)
 
 if __name__ == '__main__':
