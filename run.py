@@ -26,8 +26,8 @@ proxies_lock = asyncio.Lock()
 async def connect_to_wss(socks5_proxy, user_id):
     device_id = str(uuid.uuid4())  # Menggunakan UUID4 untuk device_id yang unik setiap koneksi
     logger.info(f"Connecting with Device ID: {device_id} menggunakan proxy {socks5_proxy}")
-    retry_delay = 60  # Delay awal sebelum mencoba kembali
-    max_retries = 120   # Batas maksimal percobaan kembali
+    retry_delay = 5  # Delay awal sebelum mencoba kembali
+    max_retries = 15   # Batas maksimal percobaan kembali
     retries = 0
 
     while retries < max_retries:
