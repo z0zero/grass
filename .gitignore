@@ -56,3 +56,4 @@ Thumbs.db
 *.session-journal
 
 proxy_list.txt
+error_logs.txt

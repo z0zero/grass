@@ -90,6 +90,10 @@ async def send_ping(websocket):
 async def handle_message(message, websocket, device_id, user_id, custom_headers):
     action = message.get("action")
     if action == "AUTH":
+        # Pisahkan operasi untuk meningkatkan keterbacaan
+        sec_ch_ua_split = custom_headers['sec-ch-ua'].split(';')[0].strip('"')
+        sec_ch_ua_platform = custom_headers['sec-ch-ua-platform']
+        
         auth_response = {
             "id": message["id"],
             "origin_action": "AUTH",
@@ -101,7 +105,7 @@ async def handle_message(message, websocket, device_id, user_id, custom_headers)
                 "device_type": "desktop",
                 "version": "4.28.2",
                 "multiplier": 2,
-                "type": f"desktop, {custom_headers['sec-ch-ua-platform']}, 10, {custom_headers['sec-ch-ua'].split(';')[0].strip('"')}, 130.0.0.0"
+                "type": f"desktop, {sec_ch_ua_platform}, 10, {sec_ch_ua_split}, 130.0.0.0"
             }
         }
         logger.debug(f"Mengirim respons AUTH: {auth_response}")
