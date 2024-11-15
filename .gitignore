@@ -54,3 +54,5 @@ Thumbs.db
 # Project specific
 *.session
 *.session-journal
+
+proxy_list.txt

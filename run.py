@@ -101,7 +101,7 @@ async def handle_message(message, websocket, device_id, user_id, custom_headers)
                 "device_type": "desktop",
                 "version": "4.28.2",
                 "multiplier": 2,
-                "type": f"desktop, {custom_headers['sec-ch-ua-platform']}, 10, {custom_headers['sec-ch-ua'].split(';')[0].strip('\"')}, 130.0.0.0"
+                "type": f"desktop, {custom_headers['sec-ch-ua-platform']}, 10, {custom_headers['sec-ch-ua'].split(';')[0].strip('"')}, 130.0.0.0"
             }
         }
         logger.debug(f"Mengirim respons AUTH: {auth_response}")
