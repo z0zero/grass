@@ -80,9 +80,7 @@ def create_custom_headers(os_type, browser_type, user_agent_str):
 
 async def send_ping(websocket):
     while True:
-        send_message = json.dumps(
-            {"id": str(uuid.uuid4()), "version": "1.0.0", "action": "PING", "data": {}}
-        )
+        send_message = json.dumps({"id": str(uuid.uuid4()), "version": "1.0.0", "action": "PING", "data": {}}).replace(" ", "")
         logger.debug(f"Mengirim PING: {send_message}")
         await websocket.send(send_message)
         await asyncio.sleep(5)
