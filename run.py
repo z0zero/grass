@@ -58,7 +58,7 @@ def determine_os_browser(user_agent_str):
     }
 
     os_type = next((os for keyword, os in os_mapping.items() if keyword in user_agent_str), "Linux")
-    browser_type = next((browser for keyword, browser in browser_mapping.items() if keyword in user_agent_str), "Safari")
+    browser_type = next((browser for keyword, browser in browser_mapping.items() if browser in user_agent_str), "Safari")
 
     return os_type, browser_type
 
@@ -82,8 +82,13 @@ async def send_ping(websocket):
     while True:
         send_message = json.dumps({"id": str(uuid.uuid4()), "version": "1.0.0", "action": "PING", "data": {}}).replace(" ", "")
         logger.debug(f"Mengirim PING: {send_message}")
-        await websocket.send(send_message)
-        await asyncio.sleep(5)
+        try:
+            await websocket.send(send_message)
+        except Exception as e:
+            logger.error(f"Gagal mengirim PING: {e}")
+            break
+        # Mengubah interval tidur dari 5 detik menjadi antara 30 hingga 35 detik
+        await asyncio.sleep(random.uniform(30, 35))
 
 async def handle_message(message, websocket, device_id, user_id, custom_headers):
     action = message.get("action")
@@ -107,57 +112,73 @@ async def handle_message(message, websocket, device_id, user_id, custom_headers)
             }
         }
         logger.debug(f"Mengirim respons AUTH: {auth_response}")
-        await websocket.send(json.dumps(auth_response))
+        try:
+            await websocket.send(json.dumps(auth_response))
+        except Exception as e:
+            logger.error(f"Gagal mengirim respons AUTH: {e}")
     elif action == "PONG":
         pong_response = {
             "id": message["id"],
             "origin_action": "PONG"
         }
         logger.debug(f"Mengirim respons PONG: {pong_response}")
-        await websocket.send(json.dumps(pong_response))
+        try:
+            await websocket.send(json.dumps(pong_response))
+        except Exception as e:
+            logger.error(f"Gagal mengirim respons PONG: {e}")
     else:
         logger.info(f"Aksi tidak ditangani: {action}")
 
-async def connect_to_wss(socks5_proxy, user_id):
+async def connect_to_wss(socks5_proxy, user_id, semaphore):
     device_id = str(uuid.uuid4())
     logger.info(f"Connecting dengan Device ID: {device_id}")
-    while True:
-        try:
-            await asyncio.sleep(random.uniform(0.1, 1.0))
-            user_agent_str = get_random_user_agent()
-            os_type, browser_type = determine_os_browser(user_agent_str)
-            
-            if os_type not in ["Windows", "MacOS", "Linux"]:
-                logger.warning(f"OS tidak dikenal: {os_type}")
-                os_type = "Unknown"
+    async with semaphore:
+        while True:
+            try:
+                await asyncio.sleep(random.uniform(0.1, 1.0))
+                user_agent_str = get_random_user_agent()
+                os_type, browser_type = determine_os_browser(user_agent_str)
+                
+                if os_type not in ["Windows", "MacOS", "Linux"]:
+                    logger.warning(f"OS tidak dikenal: {os_type}")
+                    os_type = "Unknown"
 
-            if browser_type not in ["Edge", "Chrome", "Firefox", "Safari"]:
-                logger.warning(f"Browser tidak dikenal: {browser_type}")
-                browser_type = "Unknown"
+                if browser_type not in ["Edge", "Chrome", "Firefox", "Safari"]:
+                    logger.warning(f"Browser tidak dikenal: {browser_type}")
+                    browser_type = "Unknown"
 
-            custom_headers = create_custom_headers(os_type, browser_type, user_agent_str)
+                custom_headers = create_custom_headers(os_type, browser_type, user_agent_str)
 
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
 
-            uri = random.choice(URIS)
-            server_hostname = "proxy.wynd.network"
-            proxy = Proxy.from_url(socks5_proxy)
+                uri = random.choice(URIS)
+                server_hostname = "proxy.wynd.network"
+                proxy = Proxy.from_url(socks5_proxy)
 
-            async with proxy_connect(uri, proxy=proxy, ssl=ssl_context, server_hostname=server_hostname,
-                                     extra_headers=custom_headers) as websocket:
-                asyncio.create_task(send_ping(websocket))
-                await asyncio.sleep(1)
+                async with proxy_connect(uri, proxy=proxy, ssl=ssl_context, server_hostname=server_hostname,
+                                         extra_headers=custom_headers) as websocket:
+                    asyncio.create_task(send_ping(websocket))
+                    await asyncio.sleep(1)
 
-                while True:
-                    response = await websocket.recv()
-                    message = json.loads(response)
-                    logger.info(f"Menerima pesan: {message}")
-                    await handle_message(message, websocket, device_id, user_id, custom_headers)
-        except Exception as e:
-            logger.error(f"Error dengan proxy {socks5_proxy}: {e}")
-            await asyncio.sleep(5)  # Tambahkan delay sebelum mencoba koneksi ulang
+                    while True:
+                        try:
+                            response = await websocket.recv()
+                            message = json.loads(response)
+                            logger.info(f"Menerima pesan: {message}")
+                            await handle_message(message, websocket, device_id, user_id, custom_headers)
+                        except asyncio.CancelledError:
+                            logger.info("Task PING dibatalkan.")
+                            break
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Error decoding JSON: {e}")
+                        except Exception as e:
+                            logger.error(f"Error saat menerima pesan: {e}")
+                            break
+            except Exception as e:
+                logger.error(f"Error dengan proxy {socks5_proxy}: {e}")
+                await asyncio.sleep(5)  # Tambahkan delay sebelum mencoba koneksi ulang
 
 async def main():
     _user_id = input('Silakan Masukkan user ID Anda: ')
@@ -171,7 +192,11 @@ async def main():
         logger.error(f"Error saat membaca proxy_list.txt: {e}")
         return
 
-    tasks = [asyncio.create_task(connect_to_wss(proxy, _user_id)) for proxy in local_proxies]
+    # Batasi jumlah koneksi simultan (misalnya, maksimal 100)
+    max_concurrent_connections = 128
+    semaphore = asyncio.Semaphore(max_concurrent_connections)
+
+    tasks = [asyncio.create_task(connect_to_wss(proxy, _user_id, semaphore)) for proxy in local_proxies]
     await asyncio.gather(*tasks)
 
 if __name__ == '__main__':
