@@ -5,6 +5,7 @@ import ssl
 import json
 import time
 import uuid
+import os
 from loguru import logger
 from websockets_proxy import Proxy, proxy_connect
 from fake_useragent import UserAgent, FakeUserAgentError
@@ -12,7 +13,11 @@ from fake_useragent import UserAgent, FakeUserAgentError
 # Konstanta
 URIS = [
     "wss://proxy.wynd.network:4444/",
-    "wss://proxy.wynd.network:4650/"
+    "wss://proxy.wynd.network:4650/",
+    "wss://proxy2.wynd.network:4444/",
+    "wss://proxy2.wynd.network:4650/",
+    "wss://proxy3.wynd.network:4444/",
+    "wss://proxy3.wynd.network:4650/"
 ]
 
 STATIC_USER_AGENTS = [
@@ -87,8 +92,7 @@ async def send_ping(websocket):
         except Exception as e:
             logger.error(f"Gagal mengirim PING: {e}")
             break
-        # Mengubah interval tidur dari 5 detik menjadi antara 30 hingga 35 detik
-        await asyncio.sleep(random.uniform(30, 35))
+        await asyncio.sleep(random.uniform(5, 10))
 
 async def handle_message(message, websocket, device_id, user_id, custom_headers):
     action = message.get("action")
@@ -192,8 +196,8 @@ async def main():
         logger.error(f"Error saat membaca proxy_list.txt: {e}")
         return
 
-    # Batasi jumlah koneksi simultan (misalnya, maksimal 100)
-    max_concurrent_connections = 128
+    # Batasi jumlah koneksi simultan berdasarkan jumlah proxy
+    max_concurrent_connections = len(local_proxies)
     semaphore = asyncio.Semaphore(max_concurrent_connections)
 
     tasks = [asyncio.create_task(connect_to_wss(proxy, _user_id, semaphore)) for proxy in local_proxies]
