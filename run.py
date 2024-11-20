@@ -110,7 +110,7 @@ async def handle_message(message, websocket, device_id, user_id, custom_headers)
                 "user_agent": custom_headers['User-Agent'],
                 "timestamp": int(time.time()),
                 "device_type": "desktop",
-                "version": "4.28.2",
+                "version": "4.29.0",
                 "multiplier": 2,
                 "type": f"desktop, {sec_ch_ua_platform}, 10, {sec_ch_ua_split}, 130.0.0.0"
             }
