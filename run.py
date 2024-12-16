@@ -9,22 +9,39 @@ import os
 from loguru import logger
 from websockets_proxy import Proxy, proxy_connect
 from fake_useragent import UserAgent, FakeUserAgentError
+from datetime import datetime
+from colorama import init, Fore, Style
+
+# Inisialisasi Colorama
+init(autoreset=True)
 
 # Konstanta
 URIS = [
-    "wss://proxy.wynd.network:4444/",
-    "wss://proxy.wynd.network:4650/",
+    #"wss://proxy.wynd.network:4444/",
+    #"wss://proxy.wynd.network:4650/",
     "wss://proxy2.wynd.network:4444/",
     "wss://proxy2.wynd.network:4650/",
-    "wss://proxy3.wynd.network:4444/",
-    "wss://proxy3.wynd.network:4650/"
+    #"wss://proxy3.wynd.network:4444/",
+    #"wss://proxy3.wynd.network:4650/"
 ]
 
 STATIC_USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.1 Safari/605.1.15",
     "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/112.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/115.0.0.0"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, seperti Gecko) Edge/115.0.0.0"
+]
+
+CHROME_USERAGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, seperti Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, seperti Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, seperti Gecko) Chrome/120.0.0.0 Safari/537.36"
+]
+
+EDGE_USERAGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, seperti Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.2365.57",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, seperti Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.2277.83",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, seperti Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.2210.91"
 ]
 
 # Tambahkan sink untuk mencatat kesalahan ke error_logs.txt
@@ -83,10 +100,32 @@ def create_custom_headers(os_type, browser_type, user_agent_str):
         "Sec-Fetch-Dest": "empty"
     }
 
-async def send_ping(websocket):
+def colorful_log(proxy, device_id, message_type, message_content, is_sent=False):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    color = Fore.GREEN if is_sent else Fore.BLUE
+    action_color = Fore.YELLOW
+    
+    log_message = (
+        f"{Fore.WHITE}[{timestamp}] "
+        f"{Fore.MAGENTA}[Proxy: {proxy}] "
+        f"{Fore.CYAN}[Device ID: {device_id}] "
+        f"{action_color}[{message_type}] "
+        f"{color}{message_content}"
+    )
+    
+    print(log_message)
+
+async def send_ping(websocket, proxy, device_id):
     while True:
         send_message = json.dumps({"id": str(uuid.uuid4()), "version": "1.0.0", "action": "PING", "data": {}}).replace(" ", "")
-        logger.debug(f"Mengirim PING: {send_message}")
+        colorful_log(
+            proxy=proxy,  
+            device_id=device_id, 
+            message_type="SEND PING", 
+            message_content=send_message,
+            is_sent=True
+        )
         try:
             await websocket.send(send_message)
         except Exception as e:
@@ -94,7 +133,7 @@ async def send_ping(websocket):
             break
         await asyncio.sleep(random.uniform(5, 10))
 
-async def handle_message(message, websocket, device_id, user_id, custom_headers):
+async def handle_message(message, websocket, device_id, user_id, custom_headers, proxy):
     action = message.get("action")
     if action == "AUTH":
         # Pisahkan operasi untuk meningkatkan keterbacaan
@@ -110,12 +149,18 @@ async def handle_message(message, websocket, device_id, user_id, custom_headers)
                 "user_agent": custom_headers['User-Agent'],
                 "timestamp": int(time.time()),
                 "device_type": "desktop",
-                "version": "4.29.0",
+                "version": "4.30.0",
                 "multiplier": 2,
                 "type": f"desktop, {sec_ch_ua_platform}, 10, {sec_ch_ua_split}, 130.0.0.0"
             }
         }
-        logger.debug(f"Mengirim respons AUTH: {auth_response}")
+        colorful_log(
+            proxy=proxy,  
+            device_id=device_id, 
+            message_type="SEND AUTH", 
+            message_content=json.dumps(auth_response),
+            is_sent=True
+        )
         try:
             await websocket.send(json.dumps(auth_response))
         except Exception as e:
@@ -125,7 +170,13 @@ async def handle_message(message, websocket, device_id, user_id, custom_headers)
             "id": message["id"],
             "origin_action": "PONG"
         }
-        logger.debug(f"Mengirim respons PONG: {pong_response}")
+        colorful_log(
+            proxy=proxy, 
+            device_id=device_id, 
+            message_type="SEND PONG", 
+            message_content=json.dumps(pong_response),
+            is_sent=True
+        )
         try:
             await websocket.send(json.dumps(pong_response))
         except Exception as e:
@@ -163,15 +214,20 @@ async def connect_to_wss(socks5_proxy, user_id, semaphore):
 
                 async with proxy_connect(uri, proxy=proxy, ssl=ssl_context, server_hostname=server_hostname,
                                          extra_headers=custom_headers) as websocket:
-                    asyncio.create_task(send_ping(websocket))
+                    asyncio.create_task(send_ping(websocket, socks5_proxy, device_id))
                     await asyncio.sleep(1)
 
                     while True:
                         try:
                             response = await websocket.recv()
                             message = json.loads(response)
-                            logger.info(f"Menerima pesan: {message}")
-                            await handle_message(message, websocket, device_id, user_id, custom_headers)
+                            colorful_log(
+                                proxy=socks5_proxy, 
+                                device_id=device_id, 
+                                message_type="RECEIVE", 
+                                message_content=json.dumps(message)
+                            )
+                            await handle_message(message, websocket, device_id, user_id, custom_headers, socks5_proxy)
                         except asyncio.CancelledError:
                             logger.info("Task PING dibatalkan.")
                             break
@@ -181,10 +237,16 @@ async def connect_to_wss(socks5_proxy, user_id, semaphore):
                             logger.error(f"Error saat menerima pesan: {e}")
                             break
             except Exception as e:
-                logger.error(f"Error dengan proxy {socks5_proxy}: {e}")
+                colorful_log(
+                    proxy=socks5_proxy, 
+                    device_id=device_id, 
+                    message_type="ERROR", 
+                    message_content=str(e)
+                )
                 await asyncio.sleep(5)  # Tambahkan delay sebelum mencoba koneksi ulang
 
 async def main():
+    print(f"{Fore.CYAN}z0zero | GetGrass Crooter V2{Style.RESET_ALL}")
     _user_id = input('Silakan Masukkan user ID Anda: ')
     try:
         with open('proxy_list.txt', 'r') as file:
@@ -195,6 +257,8 @@ async def main():
     except Exception as e:
         logger.error(f"Error saat membaca proxy_list.txt: {e}")
         return
+
+    print(f"{Fore.YELLOW}Total Proxies: {len(local_proxies)}{Style.RESET_ALL}")
 
     # Batasi jumlah koneksi simultan berdasarkan jumlah proxy
     max_concurrent_connections = len(local_proxies)
